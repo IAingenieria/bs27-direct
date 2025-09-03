@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check Pagos Schema - BS27</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Verificar Esquema de Tabla 'pagos'</h1>
+    <div id="results"></div>
+    
+    <script>
+        const { createClient } = supabase
+        const supabaseClient = createClient(
+            'https://bfxrifelomxmfasymnla.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeHJpZmVsb214bWZhc3ltbmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3NjMwNTgsImV4cCI6MjA3MDMzOTA1OH0.yTJcFwx_71qPNuP_nLYvlAEESqt81fTj08CXIP2IzTY'
+        )
+        
+        async function checkSchema() {
+            const resultsDiv = document.getElementById('results')
+            
+            try {
+                // 1. Intentar insertar un registro mínimo para ver qué campos son requeridos
+                resultsDiv.innerHTML += '<h2>1. Probando inserción mínima...</h2>'
+                
+                const testData = {
+                    monto_total: 100,
+                    metodo_pago: 'efectivo',
+                    notas: 'Test de esquema'
+                }
+                
+                const { data: insertResult, error: insertError } = await supabaseClient
+                    .from('pagos')
+                    .insert([testData])
+                    .select()
+                
+                if (insertError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error en inserción: ' + insertError.message + '</p>'
+                    resultsDiv.innerHTML += '<pre>' + JSON.stringify(insertError, null, 2) + '</pre>'
+                } else {
+                    resultsDiv.innerHTML += '<p style="color: green;">Inserción exitosa!</p>'
+                    resultsDiv.innerHTML += '<pre>' + JSON.stringify(insertResult, null, 2) + '</pre>'
+                    
+                    // Eliminar el registro de prueba
+                    if (insertResult && insertResult[0]) {
+                        await supabaseClient
+                            .from('pagos')
+                            .delete()
+                            .eq('id', insertResult[0].id)
+                        resultsDiv.innerHTML += '<p>Registro de prueba eliminado</p>'
+                    }
+                }
+                
+                // 2. Ver todos los registros existentes para entender la estructura
+                resultsDiv.innerHTML += '<h2>2. Registros existentes en pagos:</h2>'
+                
+                const { data: existingData, error: selectError } = await supabaseClient
+                    .from('pagos')
+                    .select('*')
+                    .limit(5)
+                
+                if (selectError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error al consultar: ' + selectError.message + '</p>'
+                } else {
+                    resultsDiv.innerHTML += '<p>Total registros encontrados: ' + (existingData?.length || 0) + '</p>'
+                    if (existingData && existingData.length > 0) {
+                        resultsDiv.innerHTML += '<pre>' + JSON.stringify(existingData, null, 2) + '</pre>'
+                        
+                        // Mostrar estructura de campos
+                        const firstRecord = existingData[0]
+                        resultsDiv.innerHTML += '<h3>Campos disponibles:</h3>'
+                        resultsDiv.innerHTML += '<ul>'
+                        Object.keys(firstRecord).forEach(key => {
+                            const value = firstRecord[key]
+                            const type = value === null ? 'null' : typeof value
+                            resultsDiv.innerHTML += `<li><strong>${key}</strong>: ${type} (valor: ${value})</li>`
+                        })
+                        resultsDiv.innerHTML += '</ul>'
+                    } else {
+                        resultsDiv.innerHTML += '<p>No hay registros existentes</p>'
+                    }
+                }
+                
+                // 3. Probar inserción con cotizacion_id como string vacío
+                resultsDiv.innerHTML += '<h2>3. Probando con cotizacion_id vacío...</h2>'
+                
+                const testData2 = {
+                    monto_total: 200,
+                    metodo_pago: 'efectivo',
+                    notas: 'Test con cotizacion_id vacío',
+                    cotizacion_id: ''
+                }
+                
+                const { data: insertResult2, error: insertError2 } = await supabaseClient
+                    .from('pagos')
+                    .insert([testData2])
+                    .select()
+                
+                if (insertError2) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error con cotizacion_id vacío: ' + insertError2.message + '</p>'
+                } else {
+                    resultsDiv.innerHTML += '<p style="color: green;">Inserción con cotizacion_id vacío exitosa!</p>'
+                    
+                    // Eliminar el registro de prueba
+                    if (insertResult2 && insertResult2[0]) {
+                        await supabaseClient
+                            .from('pagos')
+                            .delete()
+                            .eq('id', insertResult2[0].id)
+                    }
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML += '<p style="color: red;">Error general: ' + error.message + '</p>'
+                console.error('Error:', error)
+            }
+        }
+        
+        // Ejecutar verificación al cargar la página
+        window.onload = checkSchema
+    </script>
+</body>
+</html>

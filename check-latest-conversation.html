@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificar Conversación de Hoy</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .message { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .human { border-left: 4px solid #2196F3; }
+        .ai { border-left: 4px solid #FF9800; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .timestamp { color: #888; font-size: 12px; }
+        .session { background: #333; padding: 10px; margin: 15px 0; border-radius: 5px; }
+        .error { background: #f44336; color: white; padding: 10px; border-radius: 5px; }
+        .success { background: #4CAF50; color: white; padding: 10px; border-radius: 5px; }
+        .code { background: #000; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Verificar Conversación de Hoy (8:26-8:27 AM)</h1>
+        
+        <button onclick="checkTodayMessages()">📅 Mensajes de Hoy</button>
+        <button onclick="checkLatestMessages()">📊 Últimos 20 Mensajes</button>
+        <button onclick="searchBMWConversation()">🚗 Buscar Conversación BMW</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://bfxrifelomxmfasymnla.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeHJpZmVsb214bWZhc3ltbmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3NjMwNTgsImV4cCI6MjA3MDMzOTA1OH0.yTJcFwx_71qPNuP_nLYvlAEESqt81fTj08CXIP2IzTY';
+
+        async function supabaseQuery(endpoint, params = '') {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}${params}`, {
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return response.json();
+        }
+
+        async function checkTodayMessages() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>🔄 Buscando mensajes de hoy...</h2>';
+            
+            try {
+                // Buscar mensajes de las últimas 24 horas
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayISO = today.toISOString();
+                
+                const messages = await supabaseQuery('n8n_chat_histories', 
+                    `?created_at=gte.${todayISO}&order=id.desc`);
+                
+                if (messages.length === 0) {
+                    results.innerHTML = `<div class="error">❌ No se encontraron mensajes de hoy (desde ${todayISO})</div>`;
+                    return;
+                }
+                
+                let html = `<h2>📅 Mensajes de Hoy (${messages.length})</h2>`;
+                
+                // Buscar específicamente la conversación BMW
+                const bmwMessages = messages.filter(msg => {
+                    const content = Array.isArray(msg.message.content) 
+                        ? msg.message.content.join(' ').toLowerCase()
+                        : msg.message.content.toLowerCase();
+                    return content.includes('bmw') || content.includes('defensa') || content.includes('cotizar');
+                });
+                
+                if (bmwMessages.length > 0) {
+                    html += `<div class="success">✅ Encontrada conversación BMW: ${bmwMessages.length} mensajes</div>`;
+                }
+                
+                messages.forEach(msg => {
+                    const content = Array.isArray(msg.message.content) 
+                        ? msg.message.content.join(' ') 
+                        : msg.message.content;
+                    
+                    html += `<div class="message ${msg.message.type}">
+                        <strong>${msg.message.type.toUpperCase()}</strong> - ${msg.session_id} (ID: ${msg.id})
+                        <div>${content}</div>
+                        <div class="timestamp">${msg.created_at || 'Sin timestamp'}</div>
+                    </div>`;
+                });
+                
+                results.innerHTML = html;
+                
+            } catch (error) {
+                results.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function checkLatestMessages() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>🔄 Consultando últimos 20 mensajes...</h2>';
+            
+            try {
+                const messages = await supabaseQuery('n8n_chat_histories', '?order=id.desc&limit=20');
+                
+                if (messages.length === 0) {
+                    results.innerHTML = '<div class="error">❌ No se encontraron mensajes</div>';
+                    return;
+                }
+                
+                let html = `<h2>📊 Últimos ${messages.length} Mensajes</h2>`;
+                
+                // Buscar la conversación BMW específica
+                const bmwMessage = messages.find(msg => {
+                    const content = Array.isArray(msg.message.content) 
+                        ? msg.message.content.join(' ').toLowerCase()
+                        : msg.message.content.toLowerCase();
+                    return content.includes('puedes cotizar otra defensa trasera para mi bmw');
+                });
+                
+                if (bmwMessage) {
+                    html += `<div class="success">✅ Encontrado mensaje BMW específico (ID: ${bmwMessage.id})</div>`;
+                } else {
+                    html += `<div class="error">❌ No se encontró el mensaje específico sobre BMW</div>`;
+                }
+                
+                messages.forEach(msg => {
+                    const content = Array.isArray(msg.message.content) 
+                        ? msg.message.content.join(' ') 
+                        : msg.message.content;
+                    
+                    const isBMW = content.toLowerCase().includes('bmw') || content.toLowerCase().includes('defensa');
+                    
+                    html += `<div class="message ${msg.message.type}" ${isBMW ? 'style="border-left-color: #FFD700;"' : ''}>
+                        <strong>${msg.message.type.toUpperCase()}</strong> - ${msg.session_id} (ID: ${msg.id})
+                        ${isBMW ? '<strong style="color: #FFD700;">🚗 BMW RELACIONADO</strong>' : ''}
+                        <div>${content}</div>
+                        <div class="timestamp">${msg.created_at || 'Sin timestamp'}</div>
+                    </div>`;
+                });
+                
+                results.innerHTML = html;
+                
+            } catch (error) {
+                results.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function searchBMWConversation() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>🔄 Buscando conversación BMW específica...</h2>';
+            
+            try {
+                const messages = await supabaseQuery('n8n_chat_histories', '?order=id.desc&limit=50');
+                
+                // Buscar mensajes que contengan palabras clave de la conversación
+                const keywords = ['bmw', 'defensa', 'cotizar', 'pintar', 'estética', 'repuestos'];
+                const relatedMessages = messages.filter(msg => {
+                    const content = Array.isArray(msg.message.content) 
+                        ? msg.message.content.join(' ').toLowerCase()
+                        : msg.message.content.toLowerCase();
+                    return keywords.some(keyword => content.includes(keyword));
+                });
+                
+                if (relatedMessages.length === 0) {
+                    results.innerHTML = '<div class="error">❌ No se encontraron mensajes relacionados con BMW/defensa</div>';
+                    return;
+                }
+                
+                let html = `<h2>🚗 Mensajes Relacionados con BMW (${relatedMessages.length})</h2>`;
+                
+                // Agrupar por sesión
+                const sessions = {};
+                relatedMessages.forEach(msg => {
+                    if (!sessions[msg.session_id]) {
+                        sessions[msg.session_id] = [];
+                    }
+                    sessions[msg.session_id].push(msg);
+                });
+                
+                for (const [sessionId, sessionMessages] of Object.entries(sessions)) {
+                    html += `<div class="session">
+                        <h3>👤 Sesión: ${sessionId} (${sessionMessages.length} mensajes)</h3>
+                    `;
+                    
+                    sessionMessages.sort((a, b) => a.id - b.id).forEach(msg => {
+                        const content = Array.isArray(msg.message.content) 
+                            ? msg.message.content.join(' ') 
+                            : msg.message.content;
+                        
+                        html += `<div class="message ${msg.message.type}">
+                            <strong>${msg.message.type.toUpperCase()}</strong> (ID: ${msg.id})
+                            <div>${content}</div>
+                            <div class="timestamp">${msg.created_at || 'Sin timestamp'}</div>
+                        </div>`;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                results.innerHTML = html;
+                
+            } catch (error) {
+                results.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-ejecutar al cargar
+        window.onload = () => {
+            checkLatestMessages();
+        };
+    </script>
+</body>
+</html>

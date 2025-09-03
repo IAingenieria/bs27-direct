@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Quote Search - BS27</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Debug: Búsqueda de Cotización BS272025083095b</h1>
+    <div id="results"></div>
+    
+    <script>
+        const supabaseUrl = 'https://nnlgwqjqfqhqjqfqfqhq.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ubGd3cWpxZnFocWpxZnFmcWhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU1MzE2NjIsImV4cCI6MjA1MTEwNzY2Mn0.example'
+        
+        // Usar las variables de entorno reales del proyecto
+        const { createClient } = supabase
+        const supabaseClient = createClient(
+            'https://bfxrifelomxmfasymnla.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeHJpZmVsb214bWZhc3ltbmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3NjMwNTgsImV4cCI6MjA3MDMzOTA1OH0.yTJcFwx_71qPNuP_nLYvlAEESqt81fTj08CXIP2IzTY'
+        )
+        
+        async function searchQuote() {
+            const resultsDiv = document.getElementById('results')
+            const quoteNumber = 'BS272025083095b'
+            
+            resultsDiv.innerHTML = '<h2>Buscando cotización: ' + quoteNumber + '</h2>'
+            
+            try {
+                // 1. Buscar en generated_quotes
+                console.log('🔍 Buscando en generated_quotes...')
+                const { data: generatedQuotes, error: generatedError } = await supabaseClient
+                    .from('generated_quotes')
+                    .select('*')
+                
+                resultsDiv.innerHTML += '<h3>1. Tabla generated_quotes:</h3>'
+                if (generatedError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error: ' + generatedError.message + '</p>'
+                } else {
+                    resultsDiv.innerHTML += '<p>Total registros: ' + (generatedQuotes?.length || 0) + '</p>'
+                    if (generatedQuotes && generatedQuotes.length > 0) {
+                        resultsDiv.innerHTML += '<pre>' + JSON.stringify(generatedQuotes.slice(0, 3), null, 2) + '</pre>'
+                        
+                        // Buscar coincidencias
+                        const matches = generatedQuotes.filter(q => 
+                            q.quote_number && q.quote_number.includes(quoteNumber)
+                        )
+                        resultsDiv.innerHTML += '<p>Coincidencias encontradas: ' + matches.length + '</p>'
+                        if (matches.length > 0) {
+                            resultsDiv.innerHTML += '<pre style="background: lightgreen;">' + JSON.stringify(matches, null, 2) + '</pre>'
+                        }
+                    }
+                }
+                
+                // 2. Buscar en cotizaciones
+                console.log('🔍 Buscando en cotizaciones...')
+                const { data: cotizaciones, error: cotizacionesError } = await supabaseClient
+                    .from('cotizaciones')
+                    .select('*, clientes(*)')
+                
+                resultsDiv.innerHTML += '<h3>2. Tabla cotizaciones:</h3>'
+                if (cotizacionesError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error: ' + cotizacionesError.message + '</p>'
+                } else {
+                    resultsDiv.innerHTML += '<p>Total registros: ' + (cotizaciones?.length || 0) + '</p>'
+                    if (cotizaciones && cotizaciones.length > 0) {
+                        resultsDiv.innerHTML += '<pre>' + JSON.stringify(cotizaciones.slice(0, 3), null, 2) + '</pre>'
+                    }
+                }
+                
+                // 3. Buscar en whatsapp_quotes
+                console.log('🔍 Buscando en whatsapp_quotes...')
+                const { data: whatsappQuotes, error: whatsappError } = await supabaseClient
+                    .from('whatsapp_quotes')
+                    .select('*')
+                
+                resultsDiv.innerHTML += '<h3>3. Tabla whatsapp_quotes:</h3>'
+                if (whatsappError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">Error: ' + whatsappError.message + '</p>'
+                } else {
+                    resultsDiv.innerHTML += '<p>Total registros: ' + (whatsappQuotes?.length || 0) + '</p>'
+                    if (whatsappQuotes && whatsappQuotes.length > 0) {
+                        resultsDiv.innerHTML += '<pre>' + JSON.stringify(whatsappQuotes.slice(0, 3), null, 2) + '</pre>'
+                        
+                        // Buscar coincidencias
+                        const matches = whatsappQuotes.filter(q => 
+                            q.quote_number && q.quote_number.includes(quoteNumber)
+                        )
+                        resultsDiv.innerHTML += '<p>Coincidencias encontradas: ' + matches.length + '</p>'
+                        if (matches.length > 0) {
+                            resultsDiv.innerHTML += '<pre style="background: lightgreen;">' + JSON.stringify(matches, null, 2) + '</pre>'
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML += '<p style="color: red;">Error general: ' + error.message + '</p>'
+                console.error('Error:', error)
+            }
+        }
+        
+        // Ejecutar búsqueda al cargar la página
+        window.onload = searchQuote
+    </script>
+</body>
+</html>

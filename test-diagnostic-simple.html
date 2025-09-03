@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Diagnóstico Simple - BS27</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .form-group { margin: 15px 0; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        button { background: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px 5px; }
+        button:hover { background: #0056b3; }
+        .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .info { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .vehicle-card { background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 10px 0; border-left: 4px solid #007bff; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Test Diagnóstico Simple</h1>
+        <p>Herramienta para probar el guardado de diagnósticos directamente</p>
+
+        <div id="status" class="info">Conectando a Supabase...</div>
+
+        <div class="form-group">
+            <label>1. Seleccionar Vehículo:</label>
+            <select id="vehiculo-select">
+                <option value="">Cargando vehículos...</option>
+            </select>
+            <button onclick="loadVehicles()">Recargar Vehículos</button>
+        </div>
+
+        <div id="vehicle-info"></div>
+
+        <div class="form-group">
+            <label>Problema Detectado *:</label>
+            <input type="text" id="problema" placeholder="Ej: Falla en sistema de frenos" required>
+        </div>
+
+        <div class="form-group">
+            <label>Descripción Detallada *:</label>
+            <textarea id="descripcion" rows="4" placeholder="Descripción técnica completa..." required></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Técnico Responsable:</label>
+            <input type="text" id="tecnico" placeholder="Nombre del técnico">
+        </div>
+
+        <div class="form-group">
+            <label>Piezas Necesarias:</label>
+            <textarea id="piezas" rows="2" placeholder="Lista de piezas a reemplazar..."></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Tiempo Estimado:</label>
+            <input type="text" id="tiempo" placeholder="Ej: 2-3 días">
+        </div>
+
+        <div class="form-group">
+            <label>Costo Estimado ($):</label>
+            <input type="number" id="costo" step="0.01" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+            <label>Prioridad:</label>
+            <select id="prioridad">
+                <option value="baja">🟢 Baja</option>
+                <option value="media" selected>🟡 Media</option>
+                <option value="alta">🟠 Alta</option>
+                <option value="critica">🔴 Crítica</option>
+            </select>
+        </div>
+
+        <button onclick="saveDiagnostic()" style="background: #28a745;">💾 Guardar Diagnóstico</button>
+        <button onclick="clearForm()" style="background: #6c757d;">🗑️ Limpiar</button>
+
+        <div id="result"></div>
+
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://bs27direct.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzMjdkaXJlY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcyNTMyNTI0NSwiZXhwIjoyMDQwOTAxMjQ1fQ.fhYlKGSKKYJXRjOJlqfMkFOOYlMHPgLHlJsEMYLWKsI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        let vehicles = [];
+        let selectedVehicle = null;
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logs.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        async function checkConnection() {
+            try {
+                const { data, error } = await supabase.from('vehiculos').select('count').limit(1);
+                if (error) throw error;
+                document.getElementById('status').innerHTML = '<span style="color: green;">✅ Conectado a Supabase</span>';
+                log('Conexión exitosa');
+                loadVehicles();
+            } catch (error) {
+                document.getElementById('status').innerHTML = '<span style="color: red;">❌ Error de conexión</span>';
+                log(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadVehicles() {
+            try {
+                log('Cargando vehículos...');
+                const { data, error } = await supabase
+                    .from('vehiculos')
+                    .select(`
+                        id, vehiculo, status, notas,
+                        clientes (nombre, telefono)
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                vehicles = data || [];
+                const select = document.getElementById('vehiculo-select');
+                select.innerHTML = '<option value="">Seleccionar vehículo...</option>';
+
+                vehicles.forEach(vehicle => {
+                    const option = document.createElement('option');
+                    option.value = vehicle.id;
+                    option.textContent = `${vehicle.vehiculo || 'Sin nombre'} - ${vehicle.clientes?.nombre || 'Sin cliente'} (${vehicle.status})`;
+                    select.appendChild(option);
+                });
+
+                log(`Cargados ${vehicles.length} vehículos`);
+            } catch (error) {
+                log(`Error cargando vehículos: ${error.message}`, 'error');
+            }
+        }
+
+        document.getElementById('vehiculo-select').addEventListener('change', function() {
+            const vehicleId = this.value;
+            selectedVehicle = vehicles.find(v => v.id === vehicleId);
+            
+            if (selectedVehicle) {
+                document.getElementById('vehicle-info').innerHTML = `
+                    <div class="vehicle-card">
+                        <h3>Información del Vehículo</h3>
+                        <p><strong>ID:</strong> ${selectedVehicle.id}</p>
+                        <p><strong>Vehículo:</strong> ${selectedVehicle.vehiculo || 'N/A'}</p>
+                        <p><strong>Cliente:</strong> ${selectedVehicle.clientes?.nombre || 'N/A'}</p>
+                        <p><strong>Estado:</strong> ${selectedVehicle.status}</p>
+                        <p><strong>Notas actuales:</strong></p>
+                        <pre>${selectedVehicle.notas || 'Sin notas'}</pre>
+                    </div>
+                `;
+            } else {
+                document.getElementById('vehicle-info').innerHTML = '';
+            }
+        });
+
+        async function saveDiagnostic() {
+            if (!selectedVehicle) {
+                log('Error: Debe seleccionar un vehículo', 'error');
+                return;
+            }
+
+            const problema = document.getElementById('problema').value.trim();
+            const descripcion = document.getElementById('descripcion').value.trim();
+
+            if (!problema || !descripcion) {
+                log('Error: Problema y descripción son obligatorios', 'error');
+                return;
+            }
+
+            try {
+                log('Iniciando guardado de diagnóstico...');
+
+                const diagnosticText = `
+=== DIAGNÓSTICO TÉCNICO ===
+Fecha: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}
+Técnico: ${document.getElementById('tecnico').value || 'N/A'}
+
+PROBLEMA DETECTADO:
+${problema}
+
+DESCRIPCIÓN DETALLADA:
+${descripcion}
+
+PIEZAS NECESARIAS:
+${document.getElementById('piezas').value || 'N/A'}
+
+TIEMPO ESTIMADO: ${document.getElementById('tiempo').value || 'N/A'}
+COSTO ESTIMADO: $${document.getElementById('costo').value || '0.00'}
+PRIORIDAD: ${document.getElementById('prioridad').value.toUpperCase()}
+========================
+                `;
+
+                const currentNotes = selectedVehicle.notas || '';
+                const updatedNotes = currentNotes + '\n\n' + diagnosticText;
+
+                log('Actualizando vehículo en base de datos...');
+
+                const { data, error } = await supabase
+                    .from('vehiculos')
+                    .update({ 
+                        notas: updatedNotes,
+                        status: 'en_proceso'
+                    })
+                    .eq('id', selectedVehicle.id)
+                    .select();
+
+                if (error) {
+                    throw error;
+                }
+
+                log('✅ Diagnóstico guardado exitosamente', 'success');
+                document.getElementById('result').innerHTML = `
+                    <div class="success">
+                        <h3>✅ Diagnóstico Guardado</h3>
+                        <p>El diagnóstico se ha guardado correctamente en las notas del vehículo.</p>
+                        <p>Estado actualizado a: <strong>Cotización Aprobada</strong></p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+
+                // Recargar vehículos para ver los cambios
+                await loadVehicles();
+                clearForm();
+
+            } catch (error) {
+                log(`❌ Error guardando diagnóstico: ${error.message}`, 'error');
+                document.getElementById('result').innerHTML = `
+                    <div class="error">
+                        <h3>❌ Error</h3>
+                        <p>No se pudo guardar el diagnóstico: ${error.message}</p>
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('problema').value = '';
+            document.getElementById('descripcion').value = '';
+            document.getElementById('tecnico').value = '';
+            document.getElementById('piezas').value = '';
+            document.getElementById('tiempo').value = '';
+            document.getElementById('costo').value = '';
+            document.getElementById('prioridad').value = 'media';
+        }
+
+        // Inicializar
+        window.onload = function() {
+            checkConnection();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+	precomposeunicode = true
+[branch "main"]
+	vscode-merge-base = origin/main
+	remote = origin
+	merge = refs/heads/main
+[user]
+	name = bs27garage
+	email = bs27garage@gmail.com
+[remote "origin"]
+	url = https://github.com/IAingenieria/bs27-direct.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
