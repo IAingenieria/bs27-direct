@@ -17,7 +17,7 @@ interface Client {
   nombre: string;
   telefono: string;
   email: string | null;
-  tipo_cliente: 'individual' | 'flotilla' | 'revendedor';
+  tipo_cliente: 'individual' | 'flotilla' | 'revendedor' | 'agencia';
   notas: string | null;
   created_at: string;
   updated_at: string;
@@ -34,13 +34,13 @@ const ClientsPage = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'todos' | 'individual' | 'flotilla' | 'revendedor'>('todos');
+  const [filterType, setFilterType] = useState<'todos' | 'individual' | 'flotilla' | 'revendedor' | 'agencia'>('todos');
   
   const [newClient, setNewClient] = useState({
     nombre: '',
     telefono: '',
     email: '',
-    tipo_cliente: '' as 'individual' | 'flotilla' | 'revendedor' | '',
+    tipo_cliente: '' as 'individual' | 'flotilla' | 'revendedor' | 'agencia' | '',
     notas: ''
   });
 
@@ -388,6 +388,12 @@ const ClientsPage = () => {
             Revendedor
           </Badge>
         );
+      case 'agencia':
+        return (
+          <Badge className="bg-orange-100 text-orange-800 border border-orange-200">
+            Agencia
+          </Badge>
+        );
       default:
         return (
           <Badge className="bg-green-100 text-green-800 border border-green-200">
@@ -430,7 +436,7 @@ const ClientsPage = () => {
             </div>
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4" />
-              <Select value={filterType} onValueChange={(value: 'todos' | 'individual' | 'flotilla' | 'revendedor') => setFilterType(value)}>
+              <Select value={filterType} onValueChange={(value: 'todos' | 'individual' | 'flotilla' | 'revendedor' | 'agencia') => setFilterType(value)}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>
@@ -439,6 +445,7 @@ const ClientsPage = () => {
                   <SelectItem value="individual">Individual</SelectItem>
                   <SelectItem value="flotilla">Flotilla</SelectItem>
                   <SelectItem value="revendedor">Revendedor</SelectItem>
+                  <SelectItem value="agencia">Agencia</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -603,13 +610,14 @@ const ClientsPage = () => {
                 <Label htmlFor="tipo_cliente">Tipo de Cliente</Label>
                 <select 
                   value={newClient.tipo_cliente} 
-                  onChange={(e) => setNewClient({...newClient, tipo_cliente: e.target.value as 'individual' | 'flotilla' | 'revendedor'})}
+                  onChange={(e) => setNewClient({...newClient, tipo_cliente: e.target.value as 'individual' | 'flotilla' | 'revendedor' | 'agencia'})}
                   className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">Selecciona tipo de cliente</option>
                   <option value="individual">Individual</option>
                   <option value="flotilla">Flotilla</option>
                   <option value="revendedor">Revendedor</option>
+                  <option value="agencia">Agencia</option>
                 </select>
               </div>
             </div>
@@ -694,13 +702,14 @@ const ClientsPage = () => {
                 <Label htmlFor="edit_tipo_cliente">Tipo de Cliente</Label>
                 <select 
                   value={newClient.tipo_cliente} 
-                  onChange={(e) => setNewClient({...newClient, tipo_cliente: e.target.value as 'individual' | 'flotilla' | 'revendedor'})}
+                  onChange={(e) => setNewClient({...newClient, tipo_cliente: e.target.value as 'individual' | 'flotilla' | 'revendedor' | 'agencia'})}
                   className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">Selecciona tipo de cliente</option>
                   <option value="individual">Individual</option>
                   <option value="flotilla">Flotilla</option>
                   <option value="revendedor">Revendedor</option>
+                  <option value="agencia">Agencia</option>
                 </select>
               </div>
             </div>

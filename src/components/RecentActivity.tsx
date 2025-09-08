@@ -33,24 +33,36 @@ export function RecentActivity() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchWhatsAppActivities = async () => {
       try {
-        console.log('Fetching WhatsApp activities...');
         const activities = await whatsappMonitor.getWhatsAppActivities(10);
-        console.log('WhatsApp activities fetched:', activities);
-        setWhatsappActivities(activities);
+        if (isMounted) {
+          setWhatsappActivities(activities);
+          setLoading(false);
+        }
       } catch (error) {
         console.error('Error fetching WhatsApp activities:', error);
-      } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchWhatsAppActivities();
     
-    // Actualizar cada 30 segundos
-    const interval = setInterval(fetchWhatsAppActivities, 30000);
-    return () => clearInterval(interval);
+    // Actualizar cada 5 minutos en lugar de 30 segundos para reducir carga
+    const interval = setInterval(() => {
+      if (isMounted) {
+        fetchWhatsAppActivities();
+      }
+    }, 300000); // 5 minutos
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Solo mostrar actividades reales de WhatsApp

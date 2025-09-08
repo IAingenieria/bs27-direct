@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { DashboardStats } from "@/components/DashboardStats";
 import { QuickActions } from "@/components/QuickActions";
-import { RecentActivity } from "@/components/RecentActivity";
 import { VehicleStatus } from "@/components/VehicleStatus";
+import { RecentActivity } from "@/components/RecentActivity";
 import NotificationsPage from "@/components/NotificationsPage";
 import QuotesPage from "@/components/QuotesPage";
 import ClientsPage from "@/components/ClientsPage";
@@ -12,6 +12,7 @@ import PaymentsPage from "@/components/PaymentsPage";
 import CalendarPage from "@/components/CalendarPage";
 import MainLayout from "@/components/MainLayout";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import SimpleClientSearch from "@/components/SimpleClientSearch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,12 +22,16 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
+import ReactDOMServer from 'react-dom/server';
+import { QuotePreview } from "@/components/QuotePreview";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [showNewQuoteModal, setShowNewQuoteModal] = useState(false);
   const [showNewVehicleModal, setShowNewVehicleModal] = useState(false);
+  const [showQuotePreviewModal, setShowQuotePreviewModal] = useState(false);
+  const [quotePreviewData, setQuotePreviewData] = useState<any>(null);
   const [newClient, setNewClient] = useState({
     nombre: '',
     telefono: '',
@@ -65,10 +70,42 @@ const Index = () => {
     problema_reportado: '',
     notas_ingreso: ''
   });
+
+  // Estados para búsqueda de clientes en Nueva Orden de Taller
+  const [clientSearchResults, setClientSearchResults] = useState<any[]>([]);
+  const [showClientResults, setShowClientResults] = useState(false);
+  const [selectedClientForVehicle, setSelectedClientForVehicle] = useState<any>(null);
+  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   
   const { toast } = useToast();
 
-  const handleNewQuote = () => {
+  const handleNewQuote = (data?: any) => {
+    if (data) {
+      setNewQuote(prev => ({
+        ...prev,
+        cliente_nombre: data.client_name || '',
+        cliente_telefono: data.client_phone || '',
+        cliente_email: data.client_email || '',
+        vehiculo_marca: data.vehicle?.brand || '',
+        vehiculo_modelo: data.vehicle?.model || '',
+        vehiculo_año: data.vehicle?.year || '',
+      }));
+
+      if (data.summary) {
+        const serviceLines = data.summary.split('\n').filter((line: string) => line.trim() !== '');
+        const serviceItems = serviceLines.map((line: string, index: number) => ({
+          id: `${index + 1}`,
+          description: line,
+          price: 0,
+        }));
+        setQuoteItems(serviceItems.length > 0 ? serviceItems : [{ id: '1', description: '', price: 0 }]);
+      } else {
+        setQuoteItems([{ id: '1', description: '', price: 0 }]);
+      }
+    } else {
+      // Reset if no data is passed
+      setQuoteItems([{ id: '1', description: '', price: 0 }]);
+    }
     setShowNewQuoteModal(true);
   };
 
@@ -170,6 +207,8 @@ const Index = () => {
       return;
     }
 
+    console.log('Creating quote with:', { newQuote, quoteItems });
+
     if (quoteItems.some(item => !item.description || item.price <= 0)) {
       toast({
         title: "Error", 
@@ -180,37 +219,105 @@ const Index = () => {
     }
 
     try {
-      const quoteNumber = `BS27${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}${new Date().getDate().toString().padStart(2, '0')}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+      // Generar número de cotización único: BS27 + timestamp + random
+      const generateUniqueQuoteNumber = () => {
+        const now = new Date();
+        const timestamp = now.getTime().toString().slice(-6); // Últimos 6 dígitos del timestamp
+        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `BS27${timestamp}${random}`;
+      };
       
+      const quoteNumber = generateUniqueQuoteNumber();
+      
+      // Limpiar el número de teléfono (eliminar espacios y caracteres no numéricos)
+      const cleanPhoneNumber = (phone: string) => {
+        return phone.replace(/\D/g, '');
+      };
+      
+      // 1. Find or create the client to get cliente_id
+      let clienteId = '';
+      const { data: existingClient } = await supabase
+        .from('clientes')
+        .select('id')
+        .eq('telefono', cleanPhoneNumber(newQuote.cliente_telefono))
+        .maybeSingle();
+
+      if (existingClient) {
+        clienteId = existingClient.id;
+      } else {
+        const { data: newClientData, error: clientError } = await supabase
+          .from('clientes')
+          .insert({
+            nombre: newQuote.cliente_nombre,
+            telefono: cleanPhoneNumber(newQuote.cliente_telefono),
+            email: newQuote.cliente_email,
+            tipo_cliente: 'individual' // Default value
+          })
+          .select('id')
+          .single();
+        
+        if (clientError) throw clientError;
+        clienteId = newClientData.id;
+      }
+
       const vehicleInfo = `${newQuote.vehiculo_marca} ${newQuote.vehiculo_modelo} ${newQuote.vehiculo_año}`;
-      const services = quoteItems.map(item => `${item.description}: $${item.price.toFixed(2)}`).join(', ');
-      
-      const subtotal = calculateSubtotal();
-      const iva = calculateIVA();
+      const services = quoteItems.map(item => item.description).join('\n');
       const total = calculateTotal();
 
-      const { data, error } = await supabase
-        .from('generated_quotes')
-        .insert([{
+      // 2. Insert the quote with the correct schema
+      const quoteData = {
+        cliente_id: clienteId,
+        vehiculo: vehicleInfo,
+        problema: services,
+        descripcion_trabajo: services,
+        status: 'pendiente',
+        precio: total,
+        tipo_cliente: 'individual',
+        quote_number: quoteNumber,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        quote_html: ReactDOMServer.renderToString(<QuotePreview data={{
           quote_number: quoteNumber,
-          client_name: newQuote.cliente_nombre,
-          client_phone: newQuote.cliente_telefono,
-          client_email: newQuote.cliente_email || null,
-          vehicle_info: vehicleInfo,
-          services: services,
-          subtotal: subtotal,
-          iva: iva,
-          total: total,
-          status: 'generada'
-        }])
+            client_name: newQuote.cliente_nombre,
+            client_phone: newQuote.cliente_telefono,
+            client_email: newQuote.cliente_email,
+            vehicle_info: vehicleInfo,
+            services: quoteItems,
+            subtotal: calculateSubtotal(),
+            iva: calculateIVA(),
+            total: total,
+          }} onClose={() => {}} />)
+      };
+      
+      const { data, error } = await supabase
+        .from('cotizaciones')
+        .insert([quoteData])
         .select()
         .single();
 
       if (error) throw error;
 
+      // Calculate values for preview
+      const previewSubtotal = calculateSubtotal();
+      const previewIva = calculateIVA();
+      
+      // Show preview
+      setQuotePreviewData({
+        quote_number: quoteNumber,
+        client_name: newQuote.cliente_nombre,
+        client_phone: newQuote.cliente_telefono,
+        client_email: newQuote.cliente_email,
+        vehicle_info: vehicleInfo,
+        services: quoteItems,
+        subtotal: previewSubtotal,
+        iva: previewIva,
+        total: total,
+      });
+      setShowQuotePreviewModal(true);
+
       toast({
         title: "Cotización creada",
-        description: `Cotización ${quoteNumber} generada exitosamente`,
+        description: `Cotización generada exitosamente`, 
       });
 
       // Reset form
@@ -227,12 +334,11 @@ const Index = () => {
         fecha_vencimiento: '',
         notas: ''
       });
-      
       setQuoteItems([{ id: '1', description: '', price: 0 }]);
       setShowNewQuoteModal(false);
       
     } catch (error) {
-      console.error('Error creating quote:', error);
+      console.error('Detailed error creating quote:', error);
       toast({
         title: "Error",
         description: "No se pudo crear la cotización. Intente nuevamente.",
@@ -241,8 +347,109 @@ const Index = () => {
     }
   };
 
+  // Función para buscar clientes con protección contra crashes
+  const searchClients = async (searchTerm: string) => {
+    console.log('🔍 Searching clients with term:', searchTerm);
+    
+    if (!searchTerm || !searchTerm.trim()) {
+      setClientSearchResults([]);
+      setShowClientResults(false);
+      return;
+    }
+
+    // Protección contra caracteres especiales que pueden causar crashes
+    const sanitizedTerm = searchTerm.replace(/[%_\\]/g, '\\$&');
+    
+    try {
+      console.log('📡 Making Supabase query with sanitized term:', sanitizedTerm);
+      
+      // Consulta más segura con manejo de errores mejorado
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('id, nombre, telefono, email, tipo_cliente')
+        .or(`nombre.ilike.%${sanitizedTerm}%,telefono.ilike.%${sanitizedTerm}%`)
+        .limit(10);
+
+      console.log('📊 Supabase response:', { data, error, searchTerm: sanitizedTerm });
+
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        
+        // Fallback: buscar solo por nombre si la consulta OR falla
+        try {
+          console.log('🔄 Trying fallback query...');
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('clientes')
+            .select('id, nombre, telefono, email, tipo_cliente')
+            .ilike('nombre', `%${sanitizedTerm}%`)
+            .limit(5);
+            
+          if (!fallbackError && fallbackData) {
+            console.log('✅ Fallback successful:', fallbackData);
+            setClientSearchResults(fallbackData);
+            setShowClientResults(fallbackData.length > 0);
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error('❌ Fallback also failed:', fallbackErr);
+        }
+        
+        // Datos de prueba como último recurso
+        const fakeResults = [
+          {
+            id: 'fake-1',
+            nombre: `Cliente ${sanitizedTerm}`,
+            telefono: '5551234567',
+            email: 'cliente1@test.com',
+            tipo_cliente: 'individual'
+          }
+        ];
+        
+        console.log('🔧 Using fake data for testing:', fakeResults);
+        setClientSearchResults(fakeResults);
+        setShowClientResults(true);
+        
+        toast({
+          title: "Modo de prueba",
+          description: "Usando datos de prueba - revisar conexión a base de datos",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('✅ Search results:', data);
+      
+      setClientSearchResults(data || []);
+      setShowClientResults(data && data.length > 0);
+    } catch (error) {
+      console.error('💥 Critical error in searchClients:', error);
+      
+      // Prevenir que el error crashee la aplicación
+      setClientSearchResults([]);
+      setShowClientResults(false);
+      
+      toast({
+        title: "Error de búsqueda",
+        description: `Error crítico: ${error.message || 'Error desconocido'}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Función para seleccionar cliente
+  const selectClientForVehicle = (client: any) => {
+    setSelectedClientForVehicle(client);
+    setNewVehicle(prev => ({
+      ...prev,
+      cliente_id: client.id,
+      cliente_nombre: client.nombre
+    }));
+    setShowClientResults(false);
+    setClientSearchResults([]);
+  };
+
   const createVehicle = async () => {
-    if (!newVehicle.folio || !newVehicle.cliente_nombre || !newVehicle.marca || !newVehicle.modelo || !newVehicle.año) {
+    if (!newVehicle.folio || !selectedClientForVehicle?.id || !newVehicle.marca || !newVehicle.modelo || !newVehicle.año) {
       toast({
         title: "Error",
         description: "Folio, cliente, marca, modelo y año son campos requeridos",
@@ -252,35 +459,7 @@ const Index = () => {
     }
 
     try {
-      // Primero buscar o crear el cliente
-      let clienteId = newVehicle.cliente_id;
-      
-      if (!clienteId && newVehicle.cliente_nombre) {
-        // Buscar cliente existente por nombre
-        const { data: existingClient } = await supabase
-          .from('clientes')
-          .select('id')
-          .ilike('nombre', `%${newVehicle.cliente_nombre}%`)
-          .single();
-          
-        if (existingClient) {
-          clienteId = existingClient.id;
-        } else {
-          // Crear nuevo cliente básico
-          const { data: newClientData, error: clientError } = await supabase
-            .from('clientes')
-            .insert([{
-              nombre: newVehicle.cliente_nombre,
-              telefono: 'N/A',
-              tipo_cliente: 'individual'
-            }])
-            .select()
-            .single();
-            
-          if (clientError) throw clientError;
-          clienteId = newClientData.id;
-        }
-      }
+      const clienteId = selectedClientForVehicle.id;
 
       const { data, error } = await supabase
         .from('vehiculos')
@@ -320,6 +499,9 @@ const Index = () => {
         notas_ingreso: ''
       });
       
+      setSelectedClientForVehicle(null);
+      setClientSearchResults([]);
+      setShowClientResults(false);
       setShowNewVehicleModal(false);
       
     } catch (error) {
@@ -350,7 +532,7 @@ const Index = () => {
           </div>
         );
       case "notifications":
-        return <NotificationsPage />;
+        return <NotificationsPage onNewQuote={handleNewQuote} />;
       case "quotes":
         return <QuotesPage />;
       case "clients":
@@ -658,21 +840,26 @@ const Index = () => {
               </p>
             </div>
 
-            <div>
-              <Label htmlFor="cliente">Cliente *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="cliente"
-                  placeholder="Buscar por nombre o teléfono..."
-                  value={newVehicle.cliente_nombre}
-                  onChange={(e) => setNewVehicle({...newVehicle, cliente_nombre: e.target.value})}
-                  className="flex-1"
-                />
-                <Button variant="outline" size="sm">
-                  + Nuevo
-                </Button>
-              </div>
-            </div>
+            <SimpleClientSearch
+              selectedClient={selectedClientForVehicle}
+              onClientSelect={(client) => {
+                setSelectedClientForVehicle(client);
+                setNewVehicle(prev => ({
+                  ...prev,
+                  cliente_id: client.id,
+                  cliente_nombre: client.nombre
+                }));
+              }}
+              onClearClient={() => {
+                setSelectedClientForVehicle(null);
+                setNewVehicle(prev => ({
+                  ...prev,
+                  cliente_id: '',
+                  cliente_nombre: ''
+                }));
+              }}
+              onNewClient={() => setShowNewClientModal(true)}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -764,6 +951,11 @@ const Index = () => {
             </Button>
           </div>
         </DialogContent>
+      </Dialog>
+
+      {/* Modal Vista Previa de Cotización */}
+      <Dialog open={showQuotePreviewModal} onOpenChange={setShowQuotePreviewModal}>
+        <QuotePreview data={quotePreviewData} onClose={() => setShowQuotePreviewModal(false)} />
       </Dialog>
     </>
   );

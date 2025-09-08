@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { 
@@ -20,6 +21,8 @@ interface SidebarProps {
 }
 
 const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -28,31 +31,37 @@ const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
       id: "dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
+      route: "/",
     },
     {
       id: "notifications",
       label: "Notificaciones",
       icon: Bell,
+      route: null, // Tab-based navigation
     },
     {
       id: "quotes",
       label: "Cotizaciones",
       icon: FileText,
+      route: null, // Tab-based navigation
     },
     {
       id: "clients",
       label: "Clientes",
       icon: Users,
+      route: null, // Tab-based navigation
     },
     {
       id: "vehicles",
       label: "Vehículos",
       icon: Car,
+      route: "/vehiculos",
     },
     {
       id: "calendar",
       label: "Agenda",
       icon: Calendar,
+      route: "/calendar",
     },
   ];
 
@@ -149,12 +158,22 @@ const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
         <nav className="flex-1 p-4 space-y-2">
           {navigationItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const isActive = item.route 
+              ? location.pathname === item.route || location.pathname.startsWith(item.route + '/')
+              : activeTab === item.id;
+            
+            const handleClick = () => {
+              if (item.route) {
+                navigate(item.route);
+              } else {
+                onTabChange(item.id);
+              }
+            };
             
             return (
               <button
                 key={item.id}
-                onClick={() => onTabChange(item.id)}
+                onClick={handleClick}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                   "hover:bg-gold/10 hover:text-gold",

@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, Phone, User, AlertTriangle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Calendar, Clock, Phone, User, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import MainLayout from "./MainLayout";
 
 interface ScheduleItem {
   id: string;
@@ -208,152 +210,137 @@ const CalendarPage = () => {
     return groups;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
-  const groupedItems = groupItemsByDate(scheduleItems);
-  const todayItems = scheduleItems.filter(item => {
-    const itemDate = new Date(item.date).toDateString();
-    const today = new Date().toDateString();
-    return itemDate === today;
-  });
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Agenda y Calendario</h1>
-          <p className="text-muted-foreground">
-            Sistema de agenda y seguimientos programados
-          </p>
+    <MainLayout activeTab="calendar" onTabChange={() => {}}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-white">Agenda</h1>
         </div>
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary" className="text-sm">
-            {scheduleItems.length} Eventos esta semana
-          </Badge>
-          <Badge variant="destructive" className="text-sm">
-            {todayItems.length} Para hoy
-          </Badge>
-        </div>
-      </div>
-
-      {/* Eventos de Hoy */}
-      {todayItems.length > 0 && (
-        <Card className="border-warning/20 bg-warning-light">
-          <CardHeader>
-            <CardTitle className="flex items-center text-warning">
-              <Clock className="mr-2 h-5 w-5" />
-              Eventos de Hoy ({todayItems.length})
-            </CardTitle>
-            <CardDescription className="text-orange-700">
-              Actividades programadas para hoy que requieren atención
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {todayItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between p-3 bg-white rounded-lg border border-warning/20"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-1">
-                    {getTypeBadge(item.type, item.urgent)}
-                    <span className="text-sm font-medium">{formatDate(item.date)}</span>
-                  </div>
-                  <h4 className="font-semibold">{item.title}</h4>
-                  <p className="text-sm text-gray-600">{item.description}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Cliente: {item.client} • Tel: {item.phone}
-                  </p>
-                </div>
-                <Button size="sm" variant="outline">
-                  <Phone className="h-4 w-4 mr-1" />
-                  Contactar
-                </Button>
+        
+        <Tabs defaultValue="schedule" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 max-w-xs mb-6">
+            <TabsTrigger value="schedule">Agendar Cita</TabsTrigger>
+            <TabsTrigger value="upcoming">Próximos Eventos</TabsTrigger>
+          </TabsList>
+        
+        <TabsContent value="schedule">
+          <Card>
+            <CardHeader>
+              <CardTitle>Agenda una cita</CardTitle>
+              <CardDescription>
+                Selecciona un horario disponible para tu cita en el taller
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border">
+                <iframe 
+                  src="https://cal.com/bs27-garage-clkhzw" 
+                  width="100%" 
+                  height="700" 
+                  className="border-0" 
+                  title="Agendar Cita"
+                ></iframe>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="upcoming">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Próximos Eventos</h2>
+                <p className="text-muted-foreground">
+                  Sistema de agenda y seguimientos programados
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Badge variant="secondary" className="text-sm">
+                  {scheduleItems.length} Eventos esta semana
+                </Badge>
+                <Badge variant="destructive" className="text-sm">
+                  {scheduleItems.filter(item => new Date(item.date).toDateString() === new Date().toDateString()).length} Para hoy
+                </Badge>
+              </div>
+            </div>
 
-      {/* Agenda Semanal */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Calendar className="mr-2 h-5 w-5" />
-            Agenda de la Semana
-          </CardTitle>
-          <CardDescription>
-            Todos los eventos programados para los próximos 7 días
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {scheduleItems.length === 0 ? (
-            <div className="text-center py-12">
-              <Calendar className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No hay eventos programados</h3>
-              <p className="text-muted-foreground">
-                Los seguimientos y vencimientos aparecerán aquí automáticamente
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {Object.entries(groupedItems).map(([dateString, items]) => {
-                const date = new Date(dateString);
-                const isToday = date.toDateString() === new Date().toDateString();
-                
-                return (
-                  <div key={dateString} className={`${isToday ? 'opacity-50' : ''}`}>
-                    <h3 className="text-lg font-semibold mb-3 text-gray-700">
-                      {date.toLocaleDateString('es-MX', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                    </h3>
-                    <div className="space-y-3 ml-4">
-                      {items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              {getTypeBadge(item.type, item.urgent)}
-                              <span className="text-sm font-medium">
-                                {new Date(item.date).toLocaleTimeString('es-MX', { 
-                                  hour: '2-digit', 
-                                  minute: '2-digit' 
-                                })}
-                              </span>
-                            </div>
-                            <h4 className="font-semibold">{item.title}</h4>
-                            <p className="text-sm text-gray-600">{item.description}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              Cliente: {item.client} • Tel: {item.phone}
-                            </p>
-                          </div>
-                          <Button size="sm" variant="outline">
-                            <Phone className="h-4 w-4 mr-1" />
-                            Contactar
-                          </Button>
-                        </div>
-                      ))}
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : scheduleItems.length > 0 ? (
+              <div className="space-y-6">
+                {Object.entries(groupItemsByDate(scheduleItems)).map(([dateString, items]) => {
+                  const date = new Date(dateString);
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  
+                  return (
+                    <div key={dateString} className={isToday ? 'opacity-50' : ''}>
+                      <h3 className="text-lg font-semibold mb-3 text-gray-700">
+                        {date.toLocaleDateString('es-MX', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </h3>
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {items.map((item) => (
+                          <Card key={item.id} className={item.urgent ? 'border-red-200 bg-red-50' : ''}>
+                            <CardHeader className="pb-2">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  {item.type === 'seguimiento' && <User className="h-5 w-5" />}
+                                  {item.type === 'vencimiento' && <AlertTriangle className="h-5 w-5 text-amber-600" />}
+                                  {item.type === 'contacto' && <Phone className="h-5 w-5 text-blue-600" />}
+                                  {item.title}
+                                </CardTitle>
+                                {item.urgent && (
+                                  <Badge variant="destructive" className="animate-pulse">
+                                    Urgente
+                                  </Badge>
+                                )}
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              <p className="text-sm text-muted-foreground mb-2">{item.description}</p>
+                              <div className="flex items-center text-sm text-muted-foreground">
+                                <Calendar className="mr-1 h-4 w-4" />
+                                {new Date(item.date).toLocaleDateString()}
+                                <Clock className="ml-4 mr-1 h-4 w-4" />
+                                {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                              <div className="mt-2 flex items-center text-sm">
+                                <User className="mr-2 h-4 w-4" />
+                                {item.client}
+                              </div>
+                              <div className="mt-2">
+                                <a
+                                  href={`tel:${item.phone}`}
+                                  className="inline-flex items-center text-sm text-blue-600 hover:underline"
+                                >
+                                  <Phone className="mr-1 h-4 w-4" />
+                                  {item.phone}
+                                </a>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No hay eventos programados para los próximos días.</p>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+      </div>
+    </MainLayout>
   );
 };
 

@@ -75,26 +75,92 @@ const QuotesPage = () => {
     fecha_vencimiento: '',
     notas: ''
   });
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Función para calcular el pago pendiente
   const calculatePendingPayment = (quoteId: string, total: number) => {
-    const payment = payments[quoteId];
-    if (!payment) return total;
-    
-    const totalPaid = payment.anticipo + payment.pago1 + payment.liquidacion;
-    return Math.max(0, total - totalPaid);
+    const payment = payments[quoteId] || { anticipo: 0, pago1: 0, liquidacion: 0 };
+    const paid = (payment.anticipo || 0) + (payment.pago1 || 0) + (payment.liquidacion || 0);
+    return Math.max(0, total - paid);
   };
 
-  // Función para actualizar pagos
-  const updatePayment = (quoteId: string, field: 'anticipo' | 'pago1' | 'liquidacion', value: number) => {
+  // Cargar pagos cuando se selecciona una cotización
+  useEffect(() => {
+    if (selectedQuoteId) {
+      const quote = quotes.find(q => q.id === selectedQuoteId);
+      if (quote) {
+        setPayments(prev => ({
+          ...prev,
+          [quote.id]: {
+            anticipo: quote.anticipo || 0,
+            pago1: quote.pago1 || 0,
+            liquidacion: quote.liquidacion || 0,
+          }
+        }));
+      }
+    }
+  }, [selectedQuoteId, quotes]);
+
+  // Función para actualizar el estado de pagos localmente y en la base de datos
+  const updatePayment = async (quoteId: string, field: keyof PaymentState, value: number) => {
+    const newValue = isNaN(value) ? 0 : value; // Asegurar que siempre sea un número
+    
+    // Actualizar estado local primero para feedback inmediato
     setPayments(prev => ({
       ...prev,
       [quoteId]: {
-        ...prev[quoteId] || { anticipo: 0, pago1: 0, liquidacion: 0 },
-        [field]: value
+        ...(prev[quoteId] || { anticipo: 0, pago1: 0, liquidacion: 0 }),
+        [field]: newValue
       }
     }));
+
+    // Actualizar base de datos
+    try {
+      const { data, error } = await supabase.rpc('actualizar_pago', {
+        p_quote_id: quoteId,
+        p_field: field,
+        p_value: newValue
+      });
+
+      if (error) {
+        console.error('Error from actualizar_pago:', error);
+        throw error;
+      }
+
+      if (data && data.error) {
+        console.error('Database error:', data.error);
+        throw new Error(data.error);
+      }
+      
+      // Forzar una actualización del estado local después de un breve retraso
+      setTimeout(async () => {
+        const { data: updatedQuote, error: fetchError } = await supabase
+          .from('cotizaciones')
+          .select('anticipo, pago1, liquidacion')
+          .eq('id', quoteId)
+          .single();
+
+        if (fetchError) {
+          console.error('Error fetching updated quote:', fetchError);
+          return;
+        }
+
+        if (updatedQuote) {
+          setPayments(prev => ({
+            ...prev,
+            [quoteId]: {
+              anticipo: Number(updatedQuote.anticipo) || 0,
+              pago1: Number(updatedQuote.pago1) || 0,
+              liquidacion: Number(updatedQuote.liquidacion) || 0
+            }
+          }));
+        }
+      }, 300);
+    } catch (error) {
+      console.error('Error al actualizar el pago:', error);
+      toast.error('Error al guardar el pago');
+    }
   };
 
   useEffect(() => {
@@ -132,6 +198,31 @@ const QuotesPage = () => {
       setFilteredQuotes(filtered);
     }
   }, [quotes, searchTerm]);
+
+  // Cargar pagos existentes al inicio
+  useEffect(() => {
+    const loadPayments = async () => {
+      // Cargar todos los pagos, no solo los de cierto estado
+      const { data: quotes } = await supabase
+        .from('cotizaciones')
+        .select('id, anticipo, pago1, liquidacion')
+        .not('anticipo', 'is', null);
+
+      if (quotes) {
+        const paymentsData = quotes.reduce((acc, quote) => ({
+          ...acc,
+          [quote.id]: {
+            anticipo: Number(quote.anticipo) || 0,
+            pago1: Number(quote.pago1) || 0,
+            liquidacion: Number(quote.liquidacion) || 0,
+          },
+        }), {});
+        setPayments(paymentsData);
+      }
+    };
+
+    loadPayments();
+  }, []);
 
   const fetchQuotes = async () => {
     try {
@@ -728,10 +819,14 @@ const QuotesPage = () => {
             cliente_id: clienteId,
             quote_number: quoteNumber,
             vehiculo: vehiculoString,
+            problema: newQuote.problema || 'Sin descripción del problema',
             descripcion_trabajo: serviciosString,
             precio: calculateTotal(),
             status: 'pendiente',
+            tipo_cliente: 'individual',
             quote_html: quoteHTML,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .select();
 
@@ -981,16 +1076,112 @@ const QuotesPage = () => {
     });
   };
 
-  const updateQuoteStatus = async (quoteId: string, newStatus: 'pendiente' | 'en_proceso' | 'enviada' | 'aceptada' | 'rechazada') => {
+  const deleteQuote = async (quoteId: string) => {
     try {
+      console.log(`Deleting quote ${quoteId}...`);
+      
       const { error } = await supabase
         .from('cotizaciones')
-        .update({ status: newStatus })
+        .delete()
         .eq('id', quoteId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error deleting quote:', error);
+        toast({
+          title: "Error",
+          description: "No se pudo eliminar la cotización",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      // Actualizar el estado local inmediatamente para feedback visual instantáneo
+      // Remove from local state immediately
+      setQuotes(prevQuotes => prevQuotes.filter(quote => quote.id !== quoteId));
+      
+      console.log('✅ Quote deleted successfully');
+      toast({
+        title: "Éxito",
+        description: "Cotización eliminada del listado",
+      });
+
+    } catch (error) {
+      console.error('❌ Error in deleteQuote:', error);
+      toast({
+        title: "Error",
+        description: "Error inesperado al eliminar la cotización",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateQuoteStatus = async (quoteId: string, newStatus: 'pendiente' | 'en_proceso' | 'enviada' | 'aceptada' | 'rechazada') => {
+    console.group(`Updating Quote ${quoteId}`);
+    console.log('New status:', newStatus);
+    
+    try {
+      // 1. First, verify the quote exists and get current data
+      console.log('Step 1: Fetching current quote data...');
+      const { data: currentQuote, error: fetchError } = await supabase
+        .from('cotizaciones')
+        .select('*')
+        .eq('id', quoteId)
+        .single();
+
+      if (fetchError) {
+        console.error('❌ Error fetching quote:', fetchError);
+        throw new Error(`No se pudo obtener la cotización: ${fetchError.message}`);
+      }
+
+      if (!currentQuote) {
+        console.error('❌ Quote not found in database');
+        throw new Error('Cotización no encontrada en la base de datos');
+      }
+
+      console.log('Current quote data:', currentQuote);
+
+      // 2. Prepare update data
+      const updateData: any = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+      
+      // 3. Handle payment data if status is 'aceptada'
+      if (newStatus === 'aceptada') {
+        console.log('Processing payment data for accepted quote...');
+        updateData.anticipo = payments[quoteId]?.anticipo ?? 0;
+        updateData.pago1 = payments[quoteId]?.pago1 ?? 0;
+        updateData.liquidacion = payments[quoteId]?.liquidacion ?? 0;
+        
+        if (!updateData.anticipo && updateData.anticipo !== 0) {
+          console.warn('⚠️ No se especificó anticipo para cotización aceptada');
+        }
+      }
+      
+      console.log('Prepared update data:', updateData);
+      
+      // 4. Execute the update
+      console.log('Step 2: Executing database update...');
+      const { data: updatedQuote, error: updateError } = await supabase
+        .from('cotizaciones')
+        .update(updateData)
+        .eq('id', quoteId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('❌ Database update failed:', updateError);
+        
+        // Try to get more detailed error info
+        const { data: errorData } = await supabase.rpc('get_error_info').single();
+        console.error('Detailed error info:', errorData);
+        
+        throw new Error(`Error al actualizar la cotización: ${updateError.message}`);
+      }
+      
+      console.log('✅ Database update successful:', updatedQuote);
+
+      // Update local state immediately for instant visual feedback
+      console.log('Updating local state with new status...');
       setQuotes(prevQuotes => 
         prevQuotes.map(quote => 
           quote.id === quoteId 
@@ -999,21 +1190,44 @@ const QuotesPage = () => {
         )
       );
 
-      // Esperar un momento antes de refrescar para asegurar que la BD se actualice
+      // Refresh quotes after a short delay to ensure DB is updated
+      console.log('Refreshing quotes from database...');
       setTimeout(async () => {
-        await fetchQuotes();
-      }, 500);
+        try {
+          await fetchQuotes();
+          console.log('✅ Quotes refreshed successfully');
+        } catch (refreshError) {
+          console.error('❌ Error refreshing quotes:', refreshError);
+        }
+      }, 300);
       
+      console.log(`✅ Successfully updated quote ${quoteId} to status: ${newStatus}`);
       toast({
-        title: "Estado actualizado",
+        title: "✅ Estado actualizado",
         description: `Cotización marcada como ${newStatus.toUpperCase()}`,
       });
     } catch (error) {
-      console.error('Error updating quote status:', error);
+      console.error('❌ Error in updateQuoteStatus:', error);
+      
+      // Log additional error details if available
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      
+      // Show detailed error message to user
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'No se pudo actualizar el estado de la cotización';
+        
       toast({
-        title: "Error",
-        description: "No se pudo actualizar el estado de la cotización",
+        title: "❌ Error",
+        description: errorMessage,
         variant: "destructive",
+        duration: 5000,
       });
     }
   };
@@ -1269,17 +1483,17 @@ const QuotesPage = () => {
               {/* Totales */}
               <div className="flex justify-end">
                 <div className="w-80 space-y-2">
-                  <div className="flex justify-between items-center p-3 bg-blue-50 rounded">
+                                    <div className="flex justify-between items-center p-3 bg-blue-50 rounded">
                     <span className="font-semibold">SUBTOTAL:</span>
-                    <span className="font-bold">$ {calculateSubtotal().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold">{`$ ${calculateSubtotal().toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-blue-50 rounded">
                     <span className="font-semibold">IVA (16%):</span>
-                    <span className="font-bold">$ {calculateIVA().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold">{`$ ${calculateIVA().toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-blue-600 text-white rounded">
                     <span className="font-bold text-lg">GRAN TOTAL:</span>
-                    <span className="font-bold text-xl">$ {calculateTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-xl">{`$ ${calculateTotal().toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                   </div>
                 </div>
               </div>
@@ -1490,7 +1704,7 @@ const QuotesPage = () => {
                           size="sm"
                           variant="outline"
                           className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
-                          onValueChange={(newStatus: 'pendiente' | 'en_proceso' | 'enviada' | 'aceptada' | 'rechazada') => updateQuoteStatus(quote.id, newStatus)}
+                          onClick={() => deleteQuote(quote.id)}
                         >
                           <X className="h-4 w-4 mr-1" />
                           PERDIDO

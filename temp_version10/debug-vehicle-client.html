@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Vehicle-Client Data - BS27</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>🔍 Debug: Vehículo y Cliente</h1>
+    <div id="results"></div>
+    
+    <script>
+        const { createClient } = supabase
+        const supabaseClient = createClient(
+            'https://bfxrifelomxmfasymnla.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeHJpZmVsb214bWZhc3ltbmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3NjMwNTgsImV4cCI6MjA3MDMzOTA1OH0.yTJcFwx_71qPNuP_nLYvlAEESqt81fTj08CXIP2IzTY'
+        )
+        
+        async function debugVehicleClient() {
+            const resultsDiv = document.getElementById('results')
+            const targetFolio = '30090a25-1d42-41f9-af67-2e9fc7d679ac'
+            
+            try {
+                resultsDiv.innerHTML += '<h2>🔍 Buscando vehículo con FOLIO: ' + targetFolio + '</h2>'
+                
+                // 1. Buscar vehículo por FOLIO
+                const { data: vehicleData, error: vehicleError } = await supabaseClient
+                    .from('ordenes_taller')
+                    .select(`
+                        *,
+                        clientes (
+                            id,
+                            nombre,
+                            telefono,
+                            email,
+                            tipo_cliente
+                        )
+                    `)
+                    .eq('folio', targetFolio)
+                    .single()
+                
+                if (vehicleError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">❌ Error buscando vehículo: ' + vehicleError.message + '</p>'
+                    return
+                }
+                
+                if (!vehicleData) {
+                    resultsDiv.innerHTML += '<p style="color: red;">❌ No se encontró vehículo con ese FOLIO</p>'
+                    return
+                }
+                
+                resultsDiv.innerHTML += '<h3>✅ Vehículo encontrado:</h3>'
+                resultsDiv.innerHTML += '<pre>' + JSON.stringify(vehicleData, null, 2) + '</pre>'
+                
+                // 2. Verificar datos del cliente
+                if (vehicleData.clientes) {
+                    resultsDiv.innerHTML += '<h3>✅ Datos del cliente vinculado:</h3>'
+                    resultsDiv.innerHTML += '<ul>'
+                    resultsDiv.innerHTML += '<li><strong>Nombre:</strong> ' + (vehicleData.clientes.nombre || 'NO DISPONIBLE') + '</li>'
+                    resultsDiv.innerHTML += '<li><strong>Teléfono:</strong> ' + (vehicleData.clientes.telefono || 'NO DISPONIBLE') + '</li>'
+                    resultsDiv.innerHTML += '<li><strong>Email:</strong> ' + (vehicleData.clientes.email || 'NO DISPONIBLE') + '</li>'
+                    resultsDiv.innerHTML += '<li><strong>Tipo:</strong> ' + (vehicleData.clientes.tipo_cliente || 'NO DISPONIBLE') + '</li>'
+                    resultsDiv.innerHTML += '</ul>'
+                } else {
+                    resultsDiv.innerHTML += '<p style="color: red;">❌ No hay datos de cliente vinculado</p>'
+                }
+                
+                // 3. Verificar si Jose Luis Zavala existe en clientes
+                resultsDiv.innerHTML += '<h3>🔍 Buscando cliente "Jose Luis Zavala":</h3>'
+                
+                const { data: clientSearch, error: clientError } = await supabaseClient
+                    .from('clientes')
+                    .select('*')
+                    .ilike('nombre', '%Jose Luis Zavala%')
+                
+                if (clientError) {
+                    resultsDiv.innerHTML += '<p style="color: red;">❌ Error buscando cliente: ' + clientError.message + '</p>'
+                } else if (clientSearch && clientSearch.length > 0) {
+                    resultsDiv.innerHTML += '<p style="color: green;">✅ Cliente encontrado:</p>'
+                    resultsDiv.innerHTML += '<pre>' + JSON.stringify(clientSearch, null, 2) + '</pre>'
+                    
+                    // 4. Verificar si el vehículo está vinculado al cliente correcto
+                    const clientId = clientSearch[0].id
+                    if (vehicleData.cliente_id === clientId) {
+                        resultsDiv.innerHTML += '<p style="color: green;">✅ El vehículo está correctamente vinculado al cliente</p>'
+                    } else {
+                        resultsDiv.innerHTML += '<p style="color: red;">❌ El vehículo NO está vinculado al cliente correcto</p>'
+                        resultsDiv.innerHTML += '<p>Vehículo cliente_id: ' + vehicleData.cliente_id + '</p>'
+                        resultsDiv.innerHTML += '<p>Jose Luis Zavala id: ' + clientId + '</p>'
+                        
+                        // Sugerir corrección
+                        resultsDiv.innerHTML += '<h3>🔧 Corrección sugerida:</h3>'
+                        resultsDiv.innerHTML += '<button onclick="fixVehicleClient(\'' + vehicleData.id + '\', \'' + clientId + '\')">Vincular vehículo a Jose Luis Zavala</button>'
+                    }
+                } else {
+                    resultsDiv.innerHTML += '<p style="color: red;">❌ Cliente "Jose Luis Zavala" no encontrado en la base de datos</p>'
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML += '<p style="color: red;">❌ Error general: ' + error.message + '</p>'
+                console.error('Error:', error)
+            }
+        }
+        
+        async function fixVehicleClient(vehicleId, clientId) {
+            try {
+                const { error } = await supabaseClient
+                    .from('ordenes_taller')
+                    .update({ cliente_id: clientId })
+                    .eq('id', vehicleId)
+                
+                if (error) {
+                    alert('Error al vincular: ' + error.message)
+                } else {
+                    alert('✅ Vehículo vinculado correctamente a Jose Luis Zavala')
+                    location.reload()
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
+            }
+        }
+        
+        // Ejecutar al cargar
+        window.onload = debugVehicleClient
+    </script>
+</body>
+</html>

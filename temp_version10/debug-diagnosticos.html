@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Diagnósticos - BS27 Direct</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        input, textarea { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+        .form-group { margin: 10px 0; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Debug Diagnósticos - BS27 Direct</h1>
+        
+        <div class="section info">
+            <h3>Estado de la Conexión</h3>
+            <div id="connection-status">Verificando conexión...</div>
+        </div>
+
+        <div class="section">
+            <h3>1. Verificar Tablas Existentes</h3>
+            <button onclick="checkTables()">Verificar Tablas</button>
+            <div id="tables-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>2. Crear Tabla Diagnósticos (si no existe)</h3>
+            <button onclick="createDiagnosticsTable()">Crear Tabla</button>
+            <div id="create-table-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>3. Probar Inserción de Diagnóstico</h3>
+            <div class="form-group">
+                <label>Vehículo ID (usar un ID existente):</label>
+                <input type="text" id="vehiculo-id" placeholder="UUID del vehículo">
+                <button onclick="getVehicles()">Obtener Vehículos</button>
+            </div>
+            <div id="vehicles-list"></div>
+            
+            <div class="form-group">
+                <label>Problema Detectado:</label>
+                <input type="text" id="problema" value="Falla en sistema de frenos">
+            </div>
+            
+            <div class="form-group">
+                <label>Descripción Detallada:</label>
+                <textarea id="descripcion" rows="3">Las pastillas de freno están desgastadas y el disco presenta rayones profundos. Se requiere reemplazo completo del sistema.</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Técnico Responsable:</label>
+                <input type="text" id="tecnico" value="Juan Pérez">
+            </div>
+            
+            <button onclick="testDiagnosticInsert()">Probar Inserción</button>
+            <div id="insert-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>4. Listar Diagnósticos Existentes</h3>
+            <button onclick="listDiagnostics()">Listar Diagnósticos</button>
+            <div id="diagnostics-list"></div>
+        </div>
+
+        <div class="section">
+            <h3>5. Logs de Debug</h3>
+            <div id="debug-logs"></div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración de Supabase
+        const SUPABASE_URL = 'https://bs27direct.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzMjdkaXJlY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcyNTMyNTI0NSwiZXhwIjoyMDQwOTAxMjQ1fQ.fhYlKGSKKYJXRjOJlqfMkFOOYlMHPgLHlJsEMYLWKsI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function log(message, type = 'info') {
+            const logs = document.getElementById('debug-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logs.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        // Verificar conexión inicial
+        async function checkConnection() {
+            try {
+                const { data, error } = await supabase.from('vehiculos').select('count').limit(1);
+                if (error) throw error;
+                document.getElementById('connection-status').innerHTML = '<span style="color: green;">✅ Conexión exitosa a Supabase</span>';
+                log('Conexión a Supabase establecida correctamente', 'success');
+            } catch (error) {
+                document.getElementById('connection-status').innerHTML = '<span style="color: red;">❌ Error de conexión</span>';
+                log(`Error de conexión: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkTables() {
+            try {
+                log('Verificando tablas existentes...');
+                
+                // Verificar tabla vehiculos
+                const { data: vehiculos, error: vehiculosError } = await supabase.from('vehiculos').select('count').limit(1);
+                const vehiculosExists = !vehiculosError;
+                
+                // Verificar tabla diagnosticos
+                const { data: diagnosticos, error: diagnosticosError } = await supabase.from('diagnosticos').select('count').limit(1);
+                const diagnosticosExists = !diagnosticosError;
+                
+                const result = `
+                    <div class="${vehiculosExists ? 'success' : 'error'}">
+                        Tabla 'vehiculos': ${vehiculosExists ? '✅ Existe' : '❌ No existe'}
+                    </div>
+                    <div class="${diagnosticosExists ? 'success' : 'error'}">
+                        Tabla 'diagnosticos': ${diagnosticosExists ? '✅ Existe' : '❌ No existe'}
+                    </div>
+                `;
+                
+                document.getElementById('tables-result').innerHTML = result;
+                log(`Verificación de tablas: vehiculos=${vehiculosExists}, diagnosticos=${diagnosticosExists}`);
+                
+            } catch (error) {
+                log(`Error verificando tablas: ${error.message}`, 'error');
+                document.getElementById('tables-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function createDiagnosticsTable() {
+            try {
+                log('Intentando crear tabla diagnosticos...');
+                
+                const { data, error } = await supabase.rpc('create_diagnostics_table');
+                
+                if (error) {
+                    // Si RPC no existe, intentar con SQL directo
+                    const createSQL = `
+                        CREATE TABLE IF NOT EXISTS diagnosticos (
+                            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                            vehiculo_id UUID REFERENCES vehiculos(id) ON DELETE CASCADE,
+                            problema_detectado TEXT NOT NULL,
+                            descripcion_detallada TEXT NOT NULL,
+                            piezas_necesarias TEXT,
+                            tiempo_estimado TEXT,
+                            costo_estimado DECIMAL(10,2),
+                            prioridad TEXT CHECK (prioridad IN ('baja', 'media', 'alta', 'critica')) DEFAULT 'media',
+                            recomendaciones TEXT,
+                            tecnico_responsable TEXT,
+                            fecha_diagnostico TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                        );
+                    `;
+                    
+                    log('RPC no disponible, usando SQL directo...');
+                    document.getElementById('create-table-result').innerHTML = `
+                        <div class="info">
+                            <p>⚠️ No se puede crear la tabla automáticamente.</p>
+                            <p>Ejecuta este SQL en el panel de Supabase:</p>
+                            <pre>${createSQL}</pre>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('create-table-result').innerHTML = '<div class="success">✅ Tabla creada exitosamente</div>';
+                    log('Tabla diagnosticos creada correctamente', 'success');
+                }
+                
+            } catch (error) {
+                log(`Error creando tabla: ${error.message}`, 'error');
+                document.getElementById('create-table-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function getVehicles() {
+            try {
+                log('Obteniendo lista de vehículos...');
+                const { data, error } = await supabase.from('vehiculos').select('id, vehiculo, status').limit(10);
+                
+                if (error) throw error;
+                
+                let html = '<h4>Vehículos disponibles:</h4>';
+                if (data && data.length > 0) {
+                    html += '<ul>';
+                    data.forEach(vehicle => {
+                        html += `<li><code>${vehicle.id}</code> - ${vehicle.vehiculo || 'Sin nombre'} (${vehicle.status})</li>`;
+                    });
+                    html += '</ul>';
+                    
+                    // Auto-llenar el primer ID
+                    document.getElementById('vehiculo-id').value = data[0].id;
+                } else {
+                    html += '<p>No hay vehículos en la base de datos</p>';
+                }
+                
+                document.getElementById('vehicles-list').innerHTML = html;
+                log(`Encontrados ${data?.length || 0} vehículos`);
+                
+            } catch (error) {
+                log(`Error obteniendo vehículos: ${error.message}`, 'error');
+                document.getElementById('vehicles-list').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testDiagnosticInsert() {
+            try {
+                const vehiculoId = document.getElementById('vehiculo-id').value;
+                const problema = document.getElementById('problema').value;
+                const descripcion = document.getElementById('descripcion').value;
+                const tecnico = document.getElementById('tecnico').value;
+                
+                if (!vehiculoId || !problema || !descripcion) {
+                    throw new Error('Todos los campos obligatorios deben estar llenos');
+                }
+                
+                log('Intentando insertar diagnóstico...');
+                
+                const diagnosticData = {
+                    vehiculo_id: vehiculoId,
+                    problema_detectado: problema,
+                    descripcion_detallada: descripcion,
+                    tecnico_responsable: tecnico,
+                    prioridad: 'media',
+                    fecha_diagnostico: new Date().toISOString()
+                };
+                
+                const { data, error } = await supabase
+                    .from('diagnosticos')
+                    .insert(diagnosticData)
+                    .select();
+                
+                if (error) throw error;
+                
+                document.getElementById('insert-result').innerHTML = `
+                    <div class="success">
+                        ✅ Diagnóstico insertado exitosamente
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+                log('Diagnóstico insertado correctamente', 'success');
+                
+            } catch (error) {
+                log(`Error insertando diagnóstico: ${error.message}`, 'error');
+                document.getElementById('insert-result').innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function listDiagnostics() {
+            try {
+                log('Listando diagnósticos existentes...');
+                
+                const { data, error } = await supabase
+                    .from('diagnosticos')
+                    .select(`
+                        *,
+                        vehiculos (vehiculo, status)
+                    `)
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                let html = '<h4>Diagnósticos registrados:</h4>';
+                if (data && data.length > 0) {
+                    html += '<div>';
+                    data.forEach(diag => {
+                        html += `
+                            <div style="border: 1px solid #ddd; margin: 10px 0; padding: 10px; border-radius: 5px;">
+                                <strong>ID:</strong> ${diag.id}<br>
+                                <strong>Vehículo:</strong> ${diag.vehiculos?.vehiculo || 'N/A'}<br>
+                                <strong>Problema:</strong> ${diag.problema_detectado}<br>
+                                <strong>Técnico:</strong> ${diag.tecnico_responsable || 'N/A'}<br>
+                                <strong>Fecha:</strong> ${new Date(diag.fecha_diagnostico).toLocaleString()}<br>
+                                <strong>Prioridad:</strong> ${diag.prioridad}
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<p>No hay diagnósticos registrados</p>';
+                }
+                
+                document.getElementById('diagnostics-list').innerHTML = html;
+                log(`Encontrados ${data?.length || 0} diagnósticos`);
+                
+            } catch (error) {
+                log(`Error listando diagnósticos: ${error.message}`, 'error');
+                document.getElementById('diagnostics-list').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Inicializar al cargar la página
+        window.onload = function() {
+            checkConnection();
+            log('Sistema de debug iniciado');
+        };
+    </script>
+</body>
+</html>

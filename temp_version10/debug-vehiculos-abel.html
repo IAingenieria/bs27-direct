@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Vehículos Abel Esquivel - BS27</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+        .warning { background: #fff3cd; color: #856404; border-color: #ffeaa7; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f8f9fa; font-weight: bold; }
+        .highlight { background: #ffffcc; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Debug Vehículos - Abel Esquivel Fong</h1>
+        <p>Herramienta para verificar por qué no aparece el vehículo de Abel Esquivel</p>
+
+        <div class="section info">
+            <h3>Estado de Conexión</h3>
+            <div id="connection-status">Verificando...</div>
+        </div>
+
+        <div class="section">
+            <h3>1. Buscar Cliente Abel Esquivel</h3>
+            <button onclick="searchAbel()">Buscar Abel Esquivel</button>
+            <div id="abel-search-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>2. Listar Todos los Clientes</h3>
+            <button onclick="listAllClients()">Listar Clientes</button>
+            <div id="all-clients-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>3. Listar Todos los Vehículos</h3>
+            <button onclick="listAllVehicles()">Listar Vehículos</button>
+            <div id="all-vehicles-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>4. Buscar Vehículos de Abel</h3>
+            <button onclick="searchAbelVehicles()">Buscar Vehículos de Abel</button>
+            <div id="abel-vehicles-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>5. Verificar Cotizaciones</h3>
+            <button onclick="checkCotizaciones()">Verificar Cotizaciones</button>
+            <div id="cotizaciones-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>6. Crear Vehículo de Prueba para Abel</h3>
+            <button onclick="createTestVehicle()">Crear Vehículo de Prueba</button>
+            <div id="create-vehicle-result"></div>
+        </div>
+
+        <div class="section">
+            <h3>Logs de Debug</h3>
+            <div id="debug-logs"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://bs27direct.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzMjdkaXJlY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcyNTMyNTI0NSwiZXhwIjoyMDQwOTAxMjQ1fQ.fhYlKGSKKYJXRjOJlqfMkFOOYlMHPgLHlJsEMYLWKsI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function log(message, type = 'info') {
+            const logs = document.getElementById('debug-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logs.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        async function checkConnection() {
+            try {
+                const { data, error } = await supabase.from('clientes').select('count').limit(1);
+                if (error) throw error;
+                document.getElementById('connection-status').innerHTML = '<span style="color: green;">✅ Conectado a Supabase</span>';
+                log('Conexión exitosa a Supabase');
+            } catch (error) {
+                document.getElementById('connection-status').innerHTML = '<span style="color: red;">❌ Error de conexión</span>';
+                log(`Error de conexión: ${error.message}`, 'error');
+            }
+        }
+
+        async function searchAbel() {
+            try {
+                log('Buscando cliente Abel Esquivel...');
+                
+                const { data, error } = await supabase
+                    .from('clientes')
+                    .select('*')
+                    .or('nombre.ilike.%abel%,nombre.ilike.%esquivel%,telefono.eq.8145676789');
+
+                if (error) throw error;
+
+                let html = '<h4>Resultados de búsqueda para Abel:</h4>';
+                if (data && data.length > 0) {
+                    html += '<table><tr><th>ID</th><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Activo</th><th>Fecha Registro</th></tr>';
+                    data.forEach(client => {
+                        const isAbel = client.nombre.toLowerCase().includes('abel') || client.nombre.toLowerCase().includes('esquivel');
+                        html += `<tr ${isAbel ? 'class="highlight"' : ''}>
+                            <td>${client.id}</td>
+                            <td>${client.nombre}</td>
+                            <td>${client.telefono}</td>
+                            <td>${client.email || 'N/A'}</td>
+                            <td>${client.activo ? 'Sí' : 'No'}</td>
+                            <td>${new Date(client.created_at).toLocaleDateString()}</td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<div class="warning">⚠️ No se encontró ningún cliente con nombre Abel o Esquivel</div>';
+                }
+
+                document.getElementById('abel-search-result').innerHTML = html;
+                log(`Encontrados ${data?.length || 0} clientes en la búsqueda`);
+
+            } catch (error) {
+                log(`Error buscando Abel: ${error.message}`, 'error');
+                document.getElementById('abel-search-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function listAllClients() {
+            try {
+                log('Listando todos los clientes...');
+                
+                const { data, error } = await supabase
+                    .from('clientes')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                if (error) throw error;
+
+                let html = '<h4>Últimos 20 clientes registrados:</h4>';
+                if (data && data.length > 0) {
+                    html += '<table><tr><th>ID</th><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Fecha</th></tr>';
+                    data.forEach(client => {
+                        html += `<tr>
+                            <td>${client.id}</td>
+                            <td>${client.nombre}</td>
+                            <td>${client.telefono}</td>
+                            <td>${client.email || 'N/A'}</td>
+                            <td>${new Date(client.created_at).toLocaleDateString()}</td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<div class="warning">⚠️ No hay clientes en la base de datos</div>';
+                }
+
+                document.getElementById('all-clients-result').innerHTML = html;
+                log(`Total de clientes mostrados: ${data?.length || 0}`);
+
+            } catch (error) {
+                log(`Error listando clientes: ${error.message}`, 'error');
+                document.getElementById('all-clients-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function listAllVehicles() {
+            try {
+                log('Listando todos los vehículos...');
+                
+                const { data, error } = await supabase
+                    .from('vehiculos')
+                    .select(`
+                        *,
+                        clientes (nombre, telefono)
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                let html = '<h4>Todos los vehículos en la base de datos:</h4>';
+                if (data && data.length > 0) {
+                    html += '<table><tr><th>ID</th><th>Vehículo</th><th>Cliente</th><th>Estado</th><th>Fecha</th><th>Notas</th></tr>';
+                    data.forEach(vehicle => {
+                        const isAbel = vehicle.clientes?.nombre?.toLowerCase().includes('abel') || 
+                                      vehicle.clientes?.nombre?.toLowerCase().includes('esquivel');
+                        html += `<tr ${isAbel ? 'class="highlight"' : ''}>
+                            <td>${vehicle.id}</td>
+                            <td>${vehicle.vehiculo || 'N/A'}</td>
+                            <td>${vehicle.clientes?.nombre || 'Sin cliente'}</td>
+                            <td>${vehicle.status}</td>
+                            <td>${new Date(vehicle.created_at).toLocaleDateString()}</td>
+                            <td>${vehicle.notas ? vehicle.notas.substring(0, 100) + '...' : 'Sin notas'}</td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<div class="warning">⚠️ No hay vehículos en la base de datos</div>';
+                }
+
+                document.getElementById('all-vehicles-result').innerHTML = html;
+                log(`Total de vehículos encontrados: ${data?.length || 0}`);
+
+            } catch (error) {
+                log(`Error listando vehículos: ${error.message}`, 'error');
+                document.getElementById('all-vehicles-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function searchAbelVehicles() {
+            try {
+                log('Buscando vehículos específicos de Abel Esquivel...');
+                
+                // Primero buscar el cliente Abel
+                const { data: abelClient, error: clientError } = await supabase
+                    .from('clientes')
+                    .select('id, nombre')
+                    .or('nombre.ilike.%abel%,nombre.ilike.%esquivel%,telefono.eq.8145676789')
+                    .limit(1)
+                    .single();
+
+                if (clientError && clientError.code !== 'PGRST116') {
+                    throw clientError;
+                }
+
+                if (!abelClient) {
+                    document.getElementById('abel-vehicles-result').innerHTML = '<div class="warning">⚠️ Cliente Abel no encontrado</div>';
+                    return;
+                }
+
+                log(`Cliente Abel encontrado: ${abelClient.nombre} (ID: ${abelClient.id})`);
+
+                // Buscar vehículos de Abel
+                const { data: vehicles, error: vehiclesError } = await supabase
+                    .from('vehiculos')
+                    .select(`
+                        *,
+                        clientes (nombre, telefono)
+                    `)
+                    .eq('cliente_id', abelClient.id);
+
+                if (vehiclesError) throw vehiclesError;
+
+                let html = `<h4>Vehículos de ${abelClient.nombre}:</h4>`;
+                if (vehicles && vehicles.length > 0) {
+                    html += '<table><tr><th>ID</th><th>Vehículo</th><th>Estado</th><th>Fecha Creación</th><th>Notas</th></tr>';
+                    vehicles.forEach(vehicle => {
+                        html += `<tr class="highlight">
+                            <td>${vehicle.id}</td>
+                            <td>${vehicle.vehiculo || 'N/A'}</td>
+                            <td>${vehicle.status}</td>
+                            <td>${new Date(vehicle.created_at).toLocaleDateString()}</td>
+                            <td><pre style="max-width: 300px; white-space: pre-wrap;">${vehicle.notas || 'Sin notas'}</pre></td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<div class="warning">⚠️ Abel no tiene vehículos registrados</div>';
+                }
+
+                document.getElementById('abel-vehicles-result').innerHTML = html;
+                log(`Vehículos de Abel encontrados: ${vehicles?.length || 0}`);
+
+            } catch (error) {
+                log(`Error buscando vehículos de Abel: ${error.message}`, 'error');
+                document.getElementById('abel-vehicles-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function checkCotizaciones() {
+            try {
+                log('Verificando cotizaciones...');
+                
+                const { data, error } = await supabase
+                    .from('cotizaciones')
+                    .select(`
+                        *,
+                        clientes (nombre, telefono)
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (error) throw error;
+
+                let html = '<h4>Últimas 10 cotizaciones:</h4>';
+                if (data && data.length > 0) {
+                    html += '<table><tr><th>ID</th><th>Cliente</th><th>Vehículo</th><th>Precio</th><th>Estado</th><th>Fecha</th></tr>';
+                    data.forEach(quote => {
+                        const isAbel = quote.clientes?.nombre?.toLowerCase().includes('abel') || 
+                                      quote.clientes?.nombre?.toLowerCase().includes('esquivel');
+                        html += `<tr ${isAbel ? 'class="highlight"' : ''}>
+                            <td>${quote.id}</td>
+                            <td>${quote.clientes?.nombre || 'Sin cliente'}</td>
+                            <td>${quote.vehiculo || 'N/A'}</td>
+                            <td>$${quote.precio || 0}</td>
+                            <td>${quote.status || 'N/A'}</td>
+                            <td>${new Date(quote.created_at).toLocaleDateString()}</td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<div class="warning">⚠️ No hay cotizaciones en la base de datos</div>';
+                }
+
+                document.getElementById('cotizaciones-result').innerHTML = html;
+                log(`Cotizaciones encontradas: ${data?.length || 0}`);
+
+            } catch (error) {
+                log(`Error verificando cotizaciones: ${error.message}`, 'error');
+                document.getElementById('cotizaciones-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function createTestVehicle() {
+            try {
+                log('Creando vehículo de prueba para Abel...');
+                
+                // Primero buscar o crear cliente Abel
+                let { data: abelClient, error: clientError } = await supabase
+                    .from('clientes')
+                    .select('id, nombre')
+                    .or('nombre.ilike.%abel esquivel%,telefono.eq.8145676789')
+                    .limit(1)
+                    .single();
+
+                if (clientError && clientError.code === 'PGRST116') {
+                    // Cliente no existe, crearlo
+                    log('Cliente Abel no existe, creándolo...');
+                    const { data: newClient, error: createError } = await supabase
+                        .from('clientes')
+                        .insert({
+                            nombre: 'Abel Esquivel Fong',
+                            telefono: '8145676789',
+                            email: 'abel.esquivel@email.com',
+                            tipo_cliente: 'individual'
+                        })
+                        .select()
+                        .single();
+
+                    if (createError) throw createError;
+                    abelClient = newClient;
+                    log(`Cliente Abel creado: ${abelClient.id}`);
+                } else if (clientError) {
+                    throw clientError;
+                }
+
+                // Crear vehículo para Abel
+                const vehicleData = {
+                    cliente_id: abelClient.id,
+                    vehiculo: 'Harley Davidson Softail 2025',
+                    status: 'recibido',
+                    notas: `FOLIO: 202035
+Placas: ABC-123
+Color: Negro
+Problema: Mantenimiento general
+Notas: Vehículo ingresado para diagnóstico completo
+
+Fecha de ingreso: ${new Date().toLocaleDateString()}`
+                };
+
+                const { data: newVehicle, error: vehicleError } = await supabase
+                    .from('vehiculos')
+                    .insert(vehicleData)
+                    .select()
+                    .single();
+
+                if (vehicleError) throw vehicleError;
+
+                const html = `
+                    <div class="success">
+                        <h4>✅ Vehículo creado exitosamente</h4>
+                        <p><strong>Cliente:</strong> ${abelClient.nombre}</p>
+                        <p><strong>Vehículo:</strong> ${newVehicle.vehiculo}</p>
+                        <p><strong>ID:</strong> ${newVehicle.id}</p>
+                        <p><strong>Estado:</strong> ${newVehicle.status}</p>
+                        <pre>${JSON.stringify(newVehicle, null, 2)}</pre>
+                    </div>
+                `;
+
+                document.getElementById('create-vehicle-result').innerHTML = html;
+                log(`Vehículo creado exitosamente para Abel: ${newVehicle.id}`, 'success');
+
+            } catch (error) {
+                log(`Error creando vehículo: ${error.message}`, 'error');
+                document.getElementById('create-vehicle-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Inicializar
+        window.onload = function() {
+            checkConnection();
+            log('Sistema de debug iniciado para Abel Esquivel');
+        };
+    </script>
+</body>
+</html>

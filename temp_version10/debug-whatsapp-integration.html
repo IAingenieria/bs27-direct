@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug WhatsApp Integration</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .test { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .success { border-left: 4px solid #4CAF50; }
+        .error { border-left: 4px solid #f44336; }
+        .warning { border-left: 4px solid #ff9800; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .code { background: #000; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Debug WhatsApp Integration</h1>
+        
+        <button onclick="testConnection()">1. Probar Conexión Supabase</button>
+        <button onclick="testWhatsAppMonitor()">2. Probar WhatsApp Monitor</button>
+        <button onclick="testReactComponent()">3. Simular Componente React</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://bfxrifelomxmfasymnla.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeHJpZmVsb214bWZhc3ltbmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3NjMwNTgsImV4cCI6MjA3MDMzOTA1OH0.yTJcFwx_71qPNuP_nLYvlAEESqt81fTj08CXIP2IzTY';
+
+        async function supabaseQuery(endpoint, params = '') {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}${params}`, {
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return response.json();
+        }
+
+        async function testConnection() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>🔄 Probando conexión...</h2>';
+            
+            try {
+                const messages = await supabaseQuery('n8n_chat_histories', '?limit=5');
+                
+                results.innerHTML = `
+                    <div class="test success">
+                        <h3>✅ Conexión Exitosa</h3>
+                        <p>Mensajes encontrados: ${messages.length}</p>
+                        <div class="code">${JSON.stringify(messages, null, 2)}</div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="test error">
+                        <h3>❌ Error de Conexión</h3>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testWhatsAppMonitor() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>🔄 Probando WhatsApp Monitor...</h2>';
+            
+            try {
+                const messages = await supabaseQuery('n8n_chat_histories', '?order=id.desc&limit=20');
+                
+                // Simular la lógica del whatsappMonitor
+                const sessionGroups = {};
+                messages.forEach(message => {
+                    if (!sessionGroups[message.session_id]) {
+                        sessionGroups[message.session_id] = [];
+                    }
+                    sessionGroups[message.session_id].push(message);
+                });
+
+                const activities = [];
+                for (const [sessionId, sessionMessages] of Object.entries(sessionGroups)) {
+                    if (activities.length >= 3) break;
+
+                    const sortedMessages = sessionMessages.sort((a, b) => a.id - b.id);
+                    const lastMessage = sortedMessages[sortedMessages.length - 1];
+                    const firstHumanMessage = sortedMessages.find(m => m.message.type === 'human');
+                    
+                    // Extraer información del cliente
+                    let name = 'Cliente';
+                    let phone = '';
+                    
+                    if (sessionId.includes(':')) {
+                        const phoneMatch = sessionId.match(/user:(\d+)/);
+                        if (phoneMatch) {
+                            phone = `+52${phoneMatch[1]}`;
+                        }
+                    }
+
+                    // Determinar el estado
+                    const hasAIResponse = sortedMessages.some(m => m.message.type === 'ai');
+                    const lastIsHuman = lastMessage.message.type === 'human';
+                    
+                    let status = 'pending';
+                    let title = 'Nueva Consulta WhatsApp';
+                    
+                    if (hasAIResponse && !lastIsHuman) {
+                        status = 'success';
+                        title = 'Conversación Atendida';
+                    } else if (hasAIResponse && lastIsHuman) {
+                        status = 'warning';
+                        title = 'Respuesta Pendiente';
+                    } else if (lastIsHuman) {
+                        status = 'error';
+                        title = 'Consulta Sin Atender';
+                    }
+
+                    // Crear descripción del problema
+                    let description = 'Consulta general';
+                    if (firstHumanMessage) {
+                        const content = Array.isArray(firstHumanMessage.message.content) 
+                            ? firstHumanMessage.message.content.join(' ')
+                            : firstHumanMessage.message.content;
+                        description = content.substring(0, 80) + (content.length > 80 ? '...' : '');
+                    }
+
+                    activities.push({
+                        id: `whatsapp-${sessionId}`,
+                        type: 'whatsapp',
+                        title,
+                        description,
+                        status,
+                        client: name,
+                        phone,
+                        sessionId,
+                        messageCount: sortedMessages.length
+                    });
+                }
+
+                results.innerHTML = `
+                    <div class="test success">
+                        <h3>✅ WhatsApp Monitor Funcionando</h3>
+                        <p>Actividades generadas: ${activities.length}</p>
+                        <div class="code">${JSON.stringify(activities, null, 2)}</div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="test error">
+                        <h3>❌ Error en WhatsApp Monitor</h3>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testReactComponent() {
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="test warning">
+                    <h3>🔍 Verificaciones para React Component</h3>
+                    <p><strong>1. Verifica la consola del navegador en localhost:8081</strong></p>
+                    <p>Abre DevTools (F12) → Console y busca errores como:</p>
+                    <div class="code">
+- Error fetching WhatsApp activities
+- Cannot resolve module '@/integrations/external-supabase/whatsapp-monitor'
+- CORS errors
+- Network errors
+                    </div>
+                    
+                    <p><strong>2. Verifica las variables de entorno</strong></p>
+                    <p>El archivo .env.local debe contener:</p>
+                    <div class="code">
+VITE_EXTERNAL_SUPABASE_URL=https://bfxrifelomxmfasymnla.supabase.co
+VITE_EXTERNAL_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    </div>
+                    
+                    <p><strong>3. Verifica que el componente se esté ejecutando</strong></p>
+                    <p>Debería aparecer "Cargando actividades de WhatsApp..." temporalmente</p>
+                    
+                    <p><strong>4. Si no funciona, reinicia la aplicación:</strong></p>
+                    <div class="code">
+cd /Users/luis/CascadeProjects/bs27-direct
+npm run dev
+                    </div>
+                </div>
+            `;
+        }
+
+        // Auto-ejecutar al cargar
+        window.onload = () => {
+            testConnection();
+        };
+    </script>
+</body>
+</html>

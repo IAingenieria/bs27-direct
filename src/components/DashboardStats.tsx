@@ -3,6 +3,10 @@ import { MetricCard } from "./MetricCard";
 import { DollarSign, TrendingUp, Clock, AlertTriangle, Car } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+interface DashboardStatsProps {
+  refreshTrigger?: number;
+}
+
 export function DashboardStats() {
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [dailyIncome, setDailyIncome] = useState(0);
@@ -13,6 +17,13 @@ export function DashboardStats() {
 
   useEffect(() => {
     fetchDashboardData();
+    
+    // Refresh data every 30 seconds to capture real-time changes
+    const interval = setInterval(() => {
+      fetchDashboardData();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchDashboardData = async () => {
@@ -45,43 +56,36 @@ export function DashboardStats() {
 
       console.log('Fetching monthly income for:', { startOfMonth, endOfMonthStr });
 
-      // Buscar en tabla de pagos todos los métodos de pago del mes corriente
-      // Usar el mismo campo que usa PaymentsPage: monto_total
-      const { data: payments, error } = await supabase
-        .from('pagos')
-        .select('monto_total, metodo_pago, created_at')
+      // Buscar cotizaciones aceptadas del mes y sumar anticipo + pago1 + liquidacion
+      const { data: quotes, error } = await supabase
+        .from('cotizaciones')
+        .select('anticipo, pago1, liquidacion, created_at')
+        .eq('status', 'aceptada')
         .gte('created_at', startOfMonth)
         .lte('created_at', endOfMonthStr + ' 23:59:59');
 
       if (error) {
-        console.error('Error fetching payments:', error);
-        // Fallback: buscar en cotizaciones aceptadas del mes
-        const { data: quotes } = await supabase
-          .from('generated_quotes')
-          .select('total')
-          .eq('status', 'aceptada')
-          .gte('created_at', startOfMonth)
-          .lte('created_at', endOfMonthStr + ' 23:59:59');
-          
-        if (quotes && quotes.length > 0) {
-          const total = quotes.reduce((sum, quote) => sum + (quote.total || 0), 0);
-          setMonthlyIncome(total);
-        }
+        console.error('Error fetching quotes:', error);
+        setMonthlyIncome(0);
         return;
       }
 
-      if (payments && payments.length > 0) {
-        // Sumar todos los pagos del mes usando monto_total (mismo campo que PaymentsPage)
-        const total = payments.reduce((sum, payment) => {
-          const amount = payment.monto_total || 0;
-          console.log(`Payment: ${payment.metodo_pago} - $${amount} (${payment.created_at})`);
-          return sum + amount;
+      if (quotes && quotes.length > 0) {
+        // Sumar anticipo + pago1 + liquidacion de todas las cotizaciones aceptadas del mes
+        const total = quotes.reduce((sum, quote: any) => {
+          const anticipo = quote.anticipo || 0;
+          const pago1 = quote.pago1 || 0;
+          const liquidacion = quote.liquidacion || 0;
+          const quoteTotal = anticipo + pago1 + liquidacion;
+          
+          console.log(`Quote payments: Anticipo: $${anticipo}, Pago1: $${pago1}, Liquidación: $${liquidacion} = $${quoteTotal}`);
+          return sum + quoteTotal;
         }, 0);
         
-        console.log('Total monthly income:', total);
+        console.log('Total monthly income from payments:', total);
         setMonthlyIncome(total);
       } else {
-        console.log('No payments found for current month');
+        console.log('No accepted quotes found for current month');
         setMonthlyIncome(0);
       }
     } catch (error) {
@@ -94,14 +98,21 @@ export function DashboardStats() {
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      const { data: payments, error } = await supabase
-        .from('pagos')
-        .select('monto_total')
+      // Buscar cotizaciones aceptadas del día y sumar anticipo + pago1 + liquidacion
+      const { data: quotes, error } = await supabase
+        .from('cotizaciones')
+        .select('anticipo, pago1, liquidacion, created_at')
+        .eq('status', 'aceptada')
         .gte('created_at', today)
         .lte('created_at', today + ' 23:59:59');
 
-      if (!error && payments) {
-        const total = payments.reduce((sum, payment) => sum + (payment.monto_total || 0), 0);
+      if (!error && quotes) {
+        const total = quotes.reduce((sum, quote: any) => {
+          const anticipo = quote.anticipo || 0;
+          const pago1 = quote.pago1 || 0;
+          const liquidacion = quote.liquidacion || 0;
+          return sum + anticipo + pago1 + liquidacion;
+        }, 0);
         setDailyIncome(total);
       }
     } catch (error) {
